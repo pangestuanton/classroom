@@ -1,11 +1,6 @@
-/* ============================================================
-   ANTUGAS — Academic Productivity Dashboard
-   Schedule Database
-   Jadwal Kuliah Prodi Teknik Informatika
-   Semester Genap TA 2025/2026
-   ============================================================ */
+import { DaySchedule } from '../types/schedule';
 
-const SCHEDULE_DATABASE = [
+export const DUMMY_SCHEDULE: DaySchedule[] = [
   {
     day: 'Senin',
     courses: [
