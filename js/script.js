@@ -49,52 +49,13 @@ const state = {
 
 /* ============================
    3. SCHEDULE DATA
-   Default jadwal kuliah
+   Loaded from js/data.js (SCHEDULE_DATABASE)
    ============================ */
-const DEFAULT_SCHEDULE = [
-  {
-    day: 'Senin',
-    courses: [
-      { name: 'Algoritma & Pemrograman', time: '08:00 - 10:00', lecturer: 'Dr. Ahmad Fauzi', room: 'R.301', link: '' },
-      { name: 'Basis Data', time: '10:30 - 12:30', lecturer: 'Prof. Budi Santoso', room: 'R.205', link: '' },
-      { name: 'Jaringan Komputer', time: '13:30 - 15:30', lecturer: 'Dr. Citra Dewi', room: 'Lab Jaringan', link: '' }
-    ]
-  },
-  {
-    day: 'Selasa',
-    courses: [
-      { name: 'Matematika Diskrit', time: '08:00 - 10:00', lecturer: 'Dr. Diana Putri', room: 'R.102', link: '' },
-      { name: 'Sistem Operasi', time: '13:00 - 15:00', lecturer: 'Dr. Eko Prasetyo', room: 'Lab OS', link: '' }
-    ]
-  },
-  {
-    day: 'Rabu',
-    courses: [
-      { name: 'Pemrograman Web', time: '08:00 - 10:00', lecturer: 'Dr. Fajar Rahman', room: 'Lab Web', link: '' },
-      { name: 'Statistika', time: '10:30 - 12:30', lecturer: 'Prof. Gina Hartati', room: 'R.301', link: '' },
-      { name: 'Kecerdasan Buatan', time: '14:00 - 16:00', lecturer: 'Dr. Hendra Wijaya', room: 'R.403', link: '' }
-    ]
-  },
-  {
-    day: 'Kamis',
-    courses: [
-      { name: 'Rekayasa Perangkat Lunak', time: '08:00 - 10:00', lecturer: 'Prof. Irma Suryani', room: 'R.205', link: '' },
-      { name: 'Algoritma & Pemrograman', time: '13:00 - 15:00', lecturer: 'Dr. Ahmad Fauzi', room: 'Lab Pemrograman', link: '' }
-    ]
-  },
-  {
-    day: 'Jumat',
-    courses: [
-      { name: 'Bahasa Inggris', time: '08:00 - 10:00', lecturer: 'Dr. Julia Kartika', room: 'R.102', link: '' },
-      { name: 'Etika Profesi', time: '10:30 - 12:00', lecturer: 'Prof. Kurnia Adi', room: 'R.301', link: '' }
-    ]
-  }
-];
 
-// Load schedule from localStorage or use defaults
+// Load schedule from localStorage or use database from data.js
 function getSchedule() {
   const saved = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_schedule');
-  return saved ? JSON.parse(saved) : DEFAULT_SCHEDULE;
+  return saved ? JSON.parse(saved) : SCHEDULE_DATABASE;
 }
 
 
@@ -855,6 +816,20 @@ function renderSchedule() {
     return;
   }
 
+  // Filter out days with no courses
+  filteredSchedule = filteredSchedule.filter(s => s.courses.length > 0);
+
+  if (filteredSchedule.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        ${ICONS.calendar}
+        <div class="empty-title">Tidak Ada Jadwal</div>
+        <div class="empty-description">Tidak ada jadwal kuliah untuk hari yang dipilih.</div>
+      </div>
+    `;
+    return;
+  }
+
   container.innerHTML = filteredSchedule.map(daySchedule => {
     const isToday = daySchedule.day === todayName;
     return `
@@ -870,11 +845,20 @@ function renderSchedule() {
 }
 
 function renderScheduleCard(course) {
+  const sksLabel = course.sks ? `${course.sks} SKS` : '';
+  const codeLabel = course.code || '';
+  const classLabel = course.class || '';
+
   return `
     <div class="schedule-card">
       <div class="schedule-time">${course.time}</div>
       <div class="schedule-info">
         <div class="schedule-course-name">${course.name}</div>
+        <div class="schedule-meta-badges">
+          ${codeLabel ? `<span class="badge badge-primary">${codeLabel}</span>` : ''}
+          ${sksLabel ? `<span class="badge badge-primary">${sksLabel}</span>` : ''}
+          ${classLabel ? `<span class="badge badge-primary">Kelas ${classLabel}</span>` : ''}
+        </div>
         <div class="schedule-detail">
           <span>${ICONS.user} ${course.lecturer}</span>
           <span>${ICONS.mapPin} ${course.room}</span>

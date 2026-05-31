@@ -841,6 +841,14 @@ h4 {
   color: var(--color-ink-muted-48);
 }
 
+.schedule-meta-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xxs);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-xxs);
+}
+
 
 /* ============================
    11. BUTTONS
