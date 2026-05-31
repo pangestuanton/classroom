@@ -133,6 +133,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   }, []);
 
+  // 3. Automatically synchronize completedTaskIds with API-completed tasks (turned in / graded)
+  useEffect(() => {
+    const apiDoneIds = tasks.filter(t => t.status === 'done').map(t => t.id);
+    if (apiDoneIds.length > 0) {
+      setCompletedTaskIds(prev => {
+        const merged = Array.from(new Set([...prev, ...apiDoneIds]));
+        if (merged.length !== prev.length) {
+          return merged;
+        }
+        return prev;
+      });
+    }
+  }, [tasks]);
+
   // Login handler
   const login = () => {
     if (tokenClient) {

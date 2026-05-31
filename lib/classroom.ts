@@ -128,6 +128,7 @@ export async function getClassroomCourseWork(course: Course): Promise<Task[]> {
   if (typeof window === 'undefined') return [];
   const { gapi } = window;
 
+  // 1. Fetch coursework list
   const response = await gapi.client.classroom.courses.courseWork.list({
     courseId: course.id,
     pageSize: 30,
@@ -135,16 +136,38 @@ export async function getClassroomCourseWork(course: Course): Promise<Task[]> {
   });
 
   const courseWork = response.result.courseWork || [];
-  return courseWork.map((cw: any) => ({
-    id: cw.id,
-    title: cw.title || 'Tanpa Judul',
-    description: cw.description || '',
-    courseId: course.id,
-    courseName: course.name,
-    dueDate: cw.dueDate ? buildDateFromDue(cw.dueDate, cw.dueTime) : null,
-    link: cw.alternateLink || '#',
-    status: 'todo' // Default internal state
-  }));
+
+  // 2. Fetch student submissions to check turn-in status
+  let submissions: any[] = [];
+  try {
+    const subResponse = await gapi.client.classroom.courses.courseWork.studentSubmissions.list({
+      courseId: course.id,
+      courseWorkId: '-', // Wildcard for all coursework in this course
+      pageSize: 100
+    });
+    submissions = subResponse.result.studentSubmissions || [];
+  } catch (err) {
+    console.warn(`Failed to fetch student submissions for course: ${course.name}`, err);
+  }
+
+  // 3. Map coursework items and determine completion status
+  return courseWork.map((cw: any) => {
+    // Find matching submission
+    const sub = submissions.find((s: any) => s.courseWorkId === cw.id);
+    // Task is completed if turned in or returned with grade
+    const isSubmitted = sub && (sub.state === 'TURNED_IN' || sub.state === 'RETURNED');
+
+    return {
+      id: cw.id,
+      title: cw.title || 'Tanpa Judul',
+      description: cw.description || '',
+      courseId: course.id,
+      courseName: course.name,
+      dueDate: cw.dueDate ? buildDateFromDue(cw.dueDate, cw.dueTime) : null,
+      link: cw.alternateLink || '#',
+      status: isSubmitted ? 'done' : 'todo'
+    };
+  });
 }
 
 /** Fetch coursework lists for all provided courses */
