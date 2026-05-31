@@ -9,8 +9,8 @@
 const CONFIG = {
   // Google API credentials — replace with your own
   // See: https://console.cloud.google.com/
-  CLIENT_ID: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
-  API_KEY: 'YOUR_API_KEY',
+  CLIENT_ID: '460364343692-e4jtpob6vgsvuq4legvhioa5r6s3ckl0.apps.googleusercontent.com',
+  API_KEY: 'AIzaSyAqt6x_MAJPyQqV1yaEp7xU57I7pkhpYxU',
   DISCOVERY_DOC: 'https://classroom.googleapis.com/$discovery/rest?version=v1',
   SCOPES: [
     'https://www.googleapis.com/auth/classroom.courses.readonly',
