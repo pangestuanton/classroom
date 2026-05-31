@@ -1,16 +1,43 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ICONS } from '../../lib/constants';
 
 export default function SettingsPage() {
-  const { isLoggedIn, user, login, logout, resetCompletedTasks, syncTasks, isLoading } = useApp();
+  const { 
+    isLoggedIn, 
+    user, 
+    login, 
+    logout, 
+    resetCompletedTasks, 
+    syncTasks, 
+    isLoading,
+    icalUrl,
+    updateIcalUrl 
+  } = useApp();
+
+  const [localIcal, setLocalIcal] = useState(icalUrl);
+
+  // Synchronize local input state with global state when it loads
+  useEffect(() => {
+    setLocalIcal(icalUrl);
+  }, [icalUrl]);
 
   const handleResetData = () => {
     if (confirm('Apakah Anda yakin ingin mereset data penyelesaian tugas lokal?')) {
       resetCompletedTasks();
       alert('Data penyelesaian tugas berhasil di-reset!');
+    }
+  };
+
+  const handleSaveIcal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await updateIcalUrl(localIcal);
+      alert('Tautan Kalender Kuliah2 ITERA berhasil disimpan dan disinkronkan!');
+    } catch (err) {
+      alert('Gagal menyinkronkan kalender. Pastikan tautan yang Anda masukkan benar.');
     }
   };
 
@@ -108,6 +135,51 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Section: Moodle / Kuliah2 ITERA */}
+        <div className="bg-canvas border border-hairline rounded-lg overflow-hidden">
+          <div className="bg-surface-pearl px-lg py-md border-b border-hairline">
+            <h2 className="typo-caption-strong text-ink font-semibold">Integrasi Kuliah2 ITERA (Moodle)</h2>
+          </div>
+          
+          <div className="p-lg space-y-md">
+            <form onSubmit={handleSaveIcal} className="space-y-sm">
+              <div>
+                <label htmlFor="ical-url" className="typo-body-strong text-ink block mb-xxs">
+                  Tautan Kalender Moodle (iCal URL)
+                </label>
+                <input
+                  type="url"
+                  id="ical-url"
+                  placeholder="https://kuliah2.itera.ac.id/calendar/export_execute.php?..."
+                  value={localIcal}
+                  onChange={(e) => setLocalIcal(e.target.value)}
+                  className="w-full bg-canvas text-ink typo-body border border-hairline px-md py-xs rounded-md focus:outline-primary focus:border-primary-focus transition-smooth"
+                />
+              </div>
+              
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="bg-primary hover:bg-primary-focus disabled:bg-primary/50 text-white typo-caption-strong py-xs px-md rounded-pill transition-smooth active-press"
+              >
+                {isLoading ? 'Menyinkronkan...' : 'Simpan & Sinkronkan'}
+              </button>
+            </form>
+
+            <div className="border-t border-divider-soft pt-md">
+              <h4 className="typo-caption-strong text-ink font-semibold mb-xxs">Cara mendapatkan tautan kalender Kuliah2 ITERA:</h4>
+              <ol className="list-decimal list-inside space-y-xxs text-[13px] text-ink-muted-80 leading-relaxed pl-xxs">
+                <li>Buka situs **[kuliah2.itera.ac.id](https://kuliah2.itera.ac.id/)** di browser Anda dan lakukan login.</li>
+                <li>Pilih menu **Kalender (Calendar)** di panel sebelah kiri atau atas.</li>
+                <li>Gulir ke bawah halaman kalender dan klik tombol **Ekspor Kalender (Export Calendar)**.</li>
+                <li>Pada pilihan yang tersedia, centang **Semua acara (All events)** dan pilih rentang waktu **Kustom (Custom range)**.</li>
+                <li>Klik tombol **Dapatkan URL Kalender (Get Calendar URL)** di bagian bawah.</li>
+                <li>Salin (*copy*) tautan yang muncul dan tempelkan (*paste*) pada kolom input di atas, lalu klik **Simpan & Sinkronkan**.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
         {/* Section: Data and Sync */}
         <div className="bg-canvas border border-hairline rounded-lg overflow-hidden">
           <div className="bg-surface-pearl px-lg py-md border-b border-hairline">
@@ -119,12 +191,12 @@ export default function SettingsPage() {
               <div>
                 <h3 className="typo-body-strong text-ink">Sinkronisasi Data</h3>
                 <p className="typo-caption text-ink-muted-48 mt-xxs">
-                  Ambil data tugas terbaru dari Google Classroom API
+                  Ambil data tugas terbaru dari Google Classroom dan Kuliah2 ITERA
                 </p>
               </div>
               <button
                 onClick={syncTasks}
-                disabled={!isLoggedIn || isLoading}
+                disabled={isLoading}
                 className="bg-primary hover:bg-primary-focus disabled:bg-primary/40 disabled:cursor-not-allowed text-white typo-caption-strong py-xs px-md rounded-pill flex items-center gap-xs transition-smooth active-press"
               >
                 <span 
@@ -171,7 +243,7 @@ export default function SettingsPage() {
               <div>
                 <h3 className="typo-body-strong text-ink">Teknologi Pendukung</h3>
                 <p className="typo-caption text-ink-muted-48 mt-xxs">
-                  Next.js, TypeScript, React, Google Classroom API, Google GIS SDK
+                  Next.js, TypeScript, React, Google Classroom API, Google GIS SDK, Moodle iCal Feed
                 </p>
               </div>
             </div>

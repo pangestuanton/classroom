@@ -23,11 +23,13 @@ interface AppContextType {
   isLoading: boolean;
   completedTaskIds: string[];
   gapiInited: boolean;
+  icalUrl: string;
   login: () => void;
   logout: () => void;
   syncTasks: () => Promise<void>;
   toggleTaskComplete: (taskId: string) => void;
   resetCompletedTasks: () => void;
+  updateIcalUrl: (url: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -41,19 +43,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [tokenClient, setTokenClient] = useState<any>(null);
   const [gapiInited, setGapiInited] = useState(false);
+  const [icalUrl, setIcalUrl] = useState<string>('');
 
-  // 1. Load completed task IDs from localStorage on mount
+  // Helper to fetch iCal tasks via Next.js server-side proxy API
+  const fetchIcalTasks = async (urlToFetch: string): Promise<Task[]> => {
+    if (!urlToFetch) return [];
+    try {
+      const response = await fetch(`/api/ical?url=${encodeURIComponent(urlToFetch)}`);
+      if (response.ok) {
+        return await response.json();
+      } else {
+        console.warn('Failed to fetch iCal tasks from Vercel proxy.');
+      }
+    } catch (e) {
+      console.warn('Error fetching iCal tasks:', e);
+    }
+    return [];
+  };
+
+  // 1. Mount loader: reads localStorage caches
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_completed');
-      if (saved) {
-        setCompletedTaskIds(JSON.parse(saved));
+      const savedCompleted = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_completed');
+      if (savedCompleted) {
+        setCompletedTaskIds(JSON.parse(savedCompleted));
       }
     } catch (e) {
       console.warn('Failed to load completed task IDs:', e);
     }
+
+    try {
+      const savedIcal = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_ical');
+      if (savedIcal) {
+        setIcalUrl(savedIcal);
+      }
+    } catch (e) {
+      console.warn('Failed to load iCal URL:', e);
+    }
     
-    // Load local tasks if they exist
     try {
       const savedTasks = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks');
       const savedCourses = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_courses');
@@ -66,9 +93,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setUser(JSON.parse(savedUser));
         setIsLoggedIn(true);
       } else {
-        // Default fallback to dummy
-        setTasks(getDummyTasks());
-        setCourses(getDummyCourses());
+        // Fallback: dummy + local iCal tasks (if config exists)
+        const loadInitialFallback = async () => {
+          const savedIcal = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_ical') || '';
+          const iTasks = savedIcal ? await fetchIcalTasks(savedIcal) : [];
+          setTasks([...getDummyTasks(), ...iTasks]);
+          setCourses(getDummyCourses());
+        };
+        loadInitialFallback();
       }
     } catch (e) {
       console.warn('Failed to load cached application data:', e);
@@ -92,21 +124,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             
             setIsLoading(true);
             try {
-              // 1. Fetch profile info
+              // 1. Profile
               const profile = await fetchUserInfo(authResponse.access_token);
               setUser(profile);
               setIsLoggedIn(true);
               localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_user', JSON.stringify(profile));
               localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_is_logged_in', 'true');
               
-              // 2. Fetch classroom content
+              // 2. Courses
               const fetchedCourses = await getClassroomCourses();
               setCourses(fetchedCourses);
               localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_courses', JSON.stringify(fetchedCourses));
               
-              const fetchedTasks = await getAllClassroomTasks(fetchedCourses);
-              setTasks(fetchedTasks);
-              localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks', JSON.stringify(fetchedTasks));
+              // 3. Tasks (Google Classroom)
+              const classroomTasks = await getAllClassroomTasks(fetchedCourses);
+              
+              // 4. Tasks (Moodle iCal)
+              const moodleTasks = icalUrl ? await fetchIcalTasks(icalUrl) : [];
+              
+              const mergedTasks = [...classroomTasks, ...moodleTasks];
+              setTasks(mergedTasks);
+              localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks', JSON.stringify(mergedTasks));
             } catch (err) {
               console.error('Failed to sync Google Classroom data:', err);
             } finally {
@@ -122,18 +160,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     };
 
-    // Try immediately
     initClient();
-
-    // Or poll until loaded (since next/script executes in background)
     checkInterval = setInterval(initClient, 100);
     
     return () => {
       if (checkInterval) clearInterval(checkInterval);
     };
-  }, []);
+  }, [icalUrl]); // Re-init when icalUrl updates to ensure sync callback captures the latest state
 
-  // 3. Automatically synchronize completedTaskIds with API-completed tasks (turned in / graded)
+  // 3. Automatically synchronize completedTaskIds with API-completed tasks
   useEffect(() => {
     const apiDoneIds = tasks.filter(t => t.status === 'done').map(t => t.id);
     if (apiDoneIds.length > 0) {
@@ -158,11 +193,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Logout handler
   const logout = () => {
-    signOutGoogle(() => {
+    signOutGoogle(async () => {
       setIsLoggedIn(false);
       setUser(null);
-      setTasks(getDummyTasks());
+      
+      const moodleTasks = icalUrl ? await fetchIcalTasks(icalUrl) : [];
+      setTasks([...getDummyTasks(), ...moodleTasks]);
       setCourses(getDummyCourses());
+      
       localStorage.removeItem(CONFIG.LOCAL_STORAGE_KEY + '_user');
       localStorage.removeItem(CONFIG.LOCAL_STORAGE_KEY + '_courses');
       localStorage.removeItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks');
@@ -170,20 +208,58 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  // Manual tasks synchronization
+  // Centralized tasks synchronization (Moodle + Google Classroom)
   const syncTasks = async () => {
-    if (!isLoggedIn) return;
     setIsLoading(true);
     try {
-      const fetchedCourses = await getClassroomCourses();
-      setCourses(fetchedCourses);
-      localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_courses', JSON.stringify(fetchedCourses));
+      let classroomTasks: Task[] = [];
+      if (isLoggedIn) {
+        const fetchedCourses = await getClassroomCourses();
+        setCourses(fetchedCourses);
+        localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_courses', JSON.stringify(fetchedCourses));
 
-      const fetchedTasks = await getAllClassroomTasks(fetchedCourses);
-      setTasks(fetchedTasks);
-      localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks', JSON.stringify(fetchedTasks));
+        classroomTasks = await getAllClassroomTasks(fetchedCourses);
+      } else {
+        classroomTasks = getDummyTasks();
+      }
+
+      // Sync Moodle tasks
+      const moodleTasks = icalUrl ? await fetchIcalTasks(icalUrl) : [];
+
+      const mergedTasks = [...classroomTasks, ...moodleTasks];
+      setTasks(mergedTasks);
+      localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks', JSON.stringify(mergedTasks));
     } catch (err) {
       console.error('Manual tasks sync failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update iCal feed URL and trigger synchronization
+  const updateIcalUrl = async (url: string) => {
+    setIcalUrl(url);
+    localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_ical', url);
+    
+    // Auto sync with the new URL
+    setIsLoading(true);
+    try {
+      let classroomTasks: Task[] = [];
+      if (isLoggedIn) {
+        const cachedCourses = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_courses');
+        const parsedCourses = cachedCourses ? JSON.parse(cachedCourses) : [];
+        classroomTasks = parsedCourses.length > 0 ? await getAllClassroomTasks(parsedCourses) : [];
+      } else {
+        classroomTasks = getDummyTasks();
+      }
+
+      const moodleTasks = url ? await fetchIcalTasks(url) : [];
+      
+      const mergedTasks = [...classroomTasks, ...moodleTasks];
+      setTasks(mergedTasks);
+      localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks', JSON.stringify(mergedTasks));
+    } catch (err) {
+      console.error('Failed to sync new iCal URL:', err);
     } finally {
       setIsLoading(false);
     }
@@ -217,11 +293,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isLoading,
         completedTaskIds,
         gapiInited,
+        icalUrl,
         login,
         logout,
         syncTasks,
         toggleTaskComplete,
-        resetCompletedTasks
+        resetCompletedTasks,
+        updateIcalUrl
       }}
     >
       {children}
