@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { Task } from '../../../types/task';
 
 function parseIcalDate(dateRaw: string): string | null {
   const cleanRaw = dateRaw.split(';')[0].replace(/[:=]/g, '').trim();
   const match = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(cleanRaw);
   if (!match) return null;
 
-  const [_, year, month, day, hour, minute, second, isUtc] = match;
+  const [, year, month, day, hour, minute, second, isUtc] = match;
 
   if (hour && minute) {
     if (isUtc) {
@@ -40,11 +41,11 @@ function parseIcalDate(dateRaw: string): string | null {
   }
 }
 
-function parseICS(icsText: string): any[] {
+function parseICS(icsText: string): Task[] {
   // 1. Unfold lines (RFC 5545 specifies that long lines are split with a CRLF followed by a space/tab)
   const unfoldedText = icsText.replace(/\r?\n[ \t]/g, '');
 
-  const events: any[] = [];
+  const events: Task[] = [];
   const eventRegex = /BEGIN:VEVENT([\s\S]*?)END:VEVENT/g;
   let match;
 
@@ -104,13 +105,51 @@ function parseICS(icsText: string): any[] {
   return events;
 }
 
+/** Check if the URL is a valid remote HTTP/HTTPS URL and protect against SSRF */
+function isValidIcalUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
+    
+    const hostname = parsed.hostname.toLowerCase();
+    
+    // Block loopback and local hosts
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '0.0.0.0' ||
+      hostname === '[::1]' ||
+      hostname === 'localhost.localdomain' ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.lan')
+    ) {
+      return false;
+    }
+    
+    // Block RFC 1918 / Private IP ranges
+    if (/^127\./.test(hostname)) return false;
+    if (/^10\./.test(hostname)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    if (/^192\.168\./.test(hostname)) return false;
+    if (/^169\.254\./.test(hostname)) return false;
+    
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const url = searchParams.get('url');
 
-    if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    if (!url || !isValidIcalUrl(url)) {
+      return NextResponse.json({ error: 'Valid HTTP/HTTPS URL is required' }, { status: 400 });
     }
 
     // Secure server-side fetch to bypass CORS
@@ -130,8 +169,9 @@ export async function GET(request: Request) {
     const parsedTasks = parseICS(text);
 
     return NextResponse.json(parsedTasks);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('iCal feed processing failed:', err);
-    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Internal Server Error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

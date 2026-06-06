@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ICONS } from '../../lib/constants';
 
@@ -17,12 +17,13 @@ export default function SettingsPage() {
     updateIcalUrl 
   } = useApp();
 
+  const [prevIcalUrl, setPrevIcalUrl] = useState(icalUrl);
   const [localIcal, setLocalIcal] = useState(icalUrl);
 
-  // Synchronize local input state with global state when it loads
-  useEffect(() => {
+  if (icalUrl !== prevIcalUrl) {
+    setPrevIcalUrl(icalUrl);
     setLocalIcal(icalUrl);
-  }, [icalUrl]);
+  }
 
   const handleResetData = () => {
     if (confirm('Apakah Anda yakin ingin mereset data penyelesaian tugas lokal?')) {
@@ -36,7 +37,7 @@ export default function SettingsPage() {
     try {
       await updateIcalUrl(localIcal);
       alert('Tautan Kalender Kuliah2 ITERA berhasil disimpan dan disinkronkan!');
-    } catch (err) {
+    } catch {
       alert('Gagal menyinkronkan kalender. Pastikan tautan yang Anda masukkan benar.');
     }
   };

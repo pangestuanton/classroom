@@ -1,6 +1,6 @@
 export const CONFIG = {
-  CLIENT_ID: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '460364343692-e4jtpob6vgsvuq4legvhioa5r6s3ckl0.apps.googleusercontent.com',
-  API_KEY: process.env.NEXT_PUBLIC_GOOGLE_API_KEY || 'AIzaSyAqt6x_MAJPyQqV1yaEp7xU57I7pkhpYxU',
+  CLIENT_ID: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '',
+  API_KEY: process.env.NEXT_PUBLIC_GOOGLE_API_KEY || '',
   DISCOVERY_DOC: 'https://classroom.googleapis.com/$discovery/rest?version=v1',
   SCOPES: [
     'https://www.googleapis.com/auth/classroom.courses.readonly',

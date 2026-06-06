@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
@@ -35,15 +36,76 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [user, setUser] = useState<GoogleUserProfile | null>(null);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_is_logged_in') === 'true';
+    }
+    return false;
+  });
+
+  const [user, setUser] = useState<GoogleUserProfile | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedUser = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_user');
+        return savedUser ? JSON.parse(savedUser) : null;
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return null;
+  });
+
+  const [courses, setCourses] = useState<Course[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedCourses = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_courses');
+        if (savedCourses) return JSON.parse(savedCourses);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return getDummyCourses();
+  });
+
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedTasks = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks');
+        if (savedTasks) return JSON.parse(savedTasks);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    return getDummyTasks();
+  });
+
   const [isLoading, setIsLoading] = useState(false);
-  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
+
+  const [completedTaskIds, setCompletedTaskIds] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedCompleted = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_completed');
+        return savedCompleted ? JSON.parse(savedCompleted) : [];
+      } catch (e) {
+        console.warn('Failed to load completed task IDs:', e);
+      }
+    }
+    return [];
+  });
+
   const [tokenClient, setTokenClient] = useState<any>(null);
   const [gapiInited, setGapiInited] = useState(false);
-  const [icalUrl, setIcalUrl] = useState<string>('');
+
+  const [icalUrl, setIcalUrl] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_ical') || '';
+      } catch (e) {
+        console.warn('Failed to load iCal URL:', e);
+      }
+    }
+    return '';
+  });
 
   // Helper to fetch iCal tasks via Next.js server-side proxy API
   const fetchIcalTasks = async (urlToFetch: string): Promise<Task[]> => {
@@ -61,57 +123,30 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return [];
   };
 
-  // 1. Mount loader: reads localStorage caches
+  // 1. Mount loader: fetches Moodle tasks on mount if not logged in (to update dummy list with fresh feed)
   useEffect(() => {
-    try {
-      const savedCompleted = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_completed');
-      if (savedCompleted) {
-        setCompletedTaskIds(JSON.parse(savedCompleted));
-      }
-    } catch (e) {
-      console.warn('Failed to load completed task IDs:', e);
-    }
-
-    try {
-      const savedIcal = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_ical');
-      if (savedIcal) {
-        setIcalUrl(savedIcal);
-      }
-    } catch (e) {
-      console.warn('Failed to load iCal URL:', e);
-    }
-    
-    try {
-      const savedTasks = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_tasks');
-      const savedCourses = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_courses');
-      const savedUser = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_user');
+    const loadMoodleTasksOnMount = async () => {
       const savedLogin = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_is_logged_in');
-      
-      if (savedTasks && savedCourses && savedUser && savedLogin === 'true') {
-        setTasks(JSON.parse(savedTasks));
-        setCourses(JSON.parse(savedCourses));
-        setUser(JSON.parse(savedUser));
-        setIsLoggedIn(true);
-      } else {
-        // Fallback: dummy + local iCal tasks (if config exists)
-        const loadInitialFallback = async () => {
-          const savedIcal = localStorage.getItem(CONFIG.LOCAL_STORAGE_KEY + '_ical') || '';
-          const iTasks = savedIcal ? await fetchIcalTasks(savedIcal) : [];
-          setTasks([...getDummyTasks(), ...iTasks]);
-          setCourses(getDummyCourses());
-        };
-        loadInitialFallback();
+      if (savedLogin !== 'true' && icalUrl) {
+        try {
+          const iTasks = await fetchIcalTasks(icalUrl);
+          if (iTasks.length > 0) {
+            setTasks(prev => {
+              const nonIcal = prev.filter(t => t.courseId !== 'itera-moodle');
+              return [...nonIcal, ...iTasks];
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to sync Moodle tasks on mount:', e);
+        }
       }
-    } catch (e) {
-      console.warn('Failed to load cached application data:', e);
-      setTasks(getDummyTasks());
-      setCourses(getDummyCourses());
-    }
-  }, []);
+    };
+    loadMoodleTasksOnMount();
+  }, [icalUrl]);
 
   // 2. Initialize Google SDKs
   useEffect(() => {
-    let checkInterval: NodeJS.Timeout;
+    let checkInterval: NodeJS.Timeout | null = null;
     
     const initClient = () => {
       if (isGoogleSdkLoaded()) {
@@ -156,7 +191,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setGapiInited(true);
           }
         );
-        if (checkInterval) clearInterval(checkInterval);
+        if (checkInterval) {
+          clearInterval(checkInterval);
+        }
       }
     };
 
@@ -164,7 +201,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     checkInterval = setInterval(initClient, 100);
     
     return () => {
-      if (checkInterval) clearInterval(checkInterval);
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
     };
   }, [icalUrl]); // Re-init when icalUrl updates to ensure sync callback captures the latest state
 
@@ -172,12 +211,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     const apiDoneIds = tasks.filter(t => t.status === 'done').map(t => t.id);
     if (apiDoneIds.length > 0) {
-      setCompletedTaskIds(prev => {
-        const merged = Array.from(new Set([...prev, ...apiDoneIds]));
-        if (merged.length !== prev.length) {
-          return merged;
-        }
-        return prev;
+      Promise.resolve().then(() => {
+        setCompletedTaskIds(prev => {
+          const merged = Array.from(new Set([...prev, ...apiDoneIds]));
+          if (merged.length !== prev.length) {
+            localStorage.setItem(CONFIG.LOCAL_STORAGE_KEY + '_completed', JSON.stringify(merged));
+            return merged;
+          }
+          return prev;
+        });
       });
     }
   }, [tasks]);

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { CONFIG } from './constants';
 import { Course } from '../types/classroom';
 import { Task } from '../types/task';
